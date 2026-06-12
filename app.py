@@ -26,8 +26,6 @@ except ImportError:
     PILImage = None
 
 # ═══════════════════════════ THREAD-SAFE GLOBAL LOG MONITOR ════════════════════════════════════
-# FIX: Volatile web applications reload the script file from top to bottom on UI clicks.
-# This global thread-locked cache decoupled from session_state ensures seamless log rendering.
 if "SYSTEM_TELEMETRY_LOGS" not in globals():
     globals()["SYSTEM_TELEMETRY_LOGS"] = ["🌐 Engine Standby. Awaiting daemon thread activation..."]
     globals()["THREAD_MEMORY_LOCK"] = threading.Lock()
@@ -39,12 +37,15 @@ def ui_print(text: str):
     formatted_line = f"[{timestamp}] {text}"
     with globals()["THREAD_MEMORY_LOCK"]:
         globals()["SYSTEM_TELEMETRY_LOGS"].append(formatted_line)
-        # Boundary cap to prevent long-running memory overflow drops
         if len(globals()["SYSTEM_TELEMETRY_LOGS"]) > 500:
             globals()["SYSTEM_TELEMETRY_LOGS"].pop(1)
 
+# ═══════════════════════════ STREAMLIT STATE INITIALIZATION ENGINE ═══════════════════════════
+# CRITICAL FIX: Ensures keys are safely instantiated before any logical evaluate runs
+if "is_running" not in st.session_state:
+    st.session_state.is_running = False
+
 # ═══════════════════════════ SECURED INFRASTRUCTURE SETTINGS ════════════════════════════════════
-# HARDENED: Credentials are read securely from your cloud advanced settings secret manager panel.
 try:
     EMAIL_USER = st.secrets["EMAIL_USER"]
     EMAIL_PASS = st.secrets["EMAIL_PASS"]
@@ -54,10 +55,10 @@ except Exception:
     st.stop()
 
 NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
-FAST_MODEL     = "meta/llama-3.1-8b-instruct"   # Analytics + Classification Layer
-STRONG_MODEL   = "meta/llama-3.3-70b-instruct"  # Context Translation + Drafting Layer
+FAST_MODEL     = "meta/llama-3.1-8b-instruct"   
+STRONG_MODEL   = "meta/llama-3.3-70b-instruct"  
 
-POLL_INTERVAL_SECONDS = 15  # Accelerated timing interval optimal for grading evaluations
+POLL_INTERVAL_SECONDS = 15  
 PROCESSED_IDS_FILE    = "processed_email_ids.txt"
 
 SKIP_SENDER_PATTERNS = [
@@ -132,7 +133,6 @@ def _clean_language_string(raw: str) -> str:
     parts = [p.strip().title() for p in raw.split(',') if p.strip()]
     return ', '.join(parts)
 
-# ─────────────────────────── NVIDIA API Core Engine ─────────────────────────────────
 def _call_api(model: str, messages: list, max_tokens: int = 512,
               temperature: float = 0.0, max_retries: int = 4) -> str | None:
     headers = {"Authorization": f"Bearer {NVAPI_KEY}", "Content-Type": "application/json"}
@@ -156,7 +156,6 @@ def _call_api(model: str, messages: list, max_tokens: int = 512,
             time.sleep(1)
     return None
 
-# ─────────────────────────── Core Chaining Pipelines ──────────────────────────────────
 def detect_language_and_tone(text: str) -> tuple[str, str]:
     local_lang = local_romanized_detect(text)
     system_prompt = (
@@ -233,7 +232,6 @@ def run_qa_audit(english_draft: str, native_reply: str, target_tone: str, target
             elif upper.startswith("ANALYSIS:"): analysis = line.split(":", 1)[1].strip()
     return score, analysis
 
-# ─────────────────────────── Infrastructure Support Modules ─────────────────────────────────
 def clean_html(html_text: str) -> str:
     text = html.unescape(html_text)
     text = re.sub(r"<style[^>]*>[\s\S]*?</style>|<script[^>]*>[\s\S]*?</script>|<[^>]+>", " ", text, flags=re.IGNORECASE)
@@ -270,6 +268,10 @@ def parse_email_body(msg) -> tuple[str, list]:
     final = clean_html(html_body) if html_body.strip() else clean_html(body)
     return final.strip(), images
 
+def should_skip_sender(sender_addr: str) -> bool:
+    low = sender_addr.lower()
+    return any(p in low for p in SKIP_SENDER_PATTERNS)
+
 def send_reply(recipient: str, subject: str, body_text: str):
     try:
         msg = MIMEMultipart()
@@ -289,9 +291,6 @@ def load_processed_ids() -> set:
 def save_processed_id(uid: str):
     with open(PROCESSED_IDS_FILE, "a") as f: f.write(uid + "\n")
 
-# =====================================================================
-# SYSTEM VERBOSE PIPELINE LIFE-CYCLE MANAGEMENT
-# =====================================================================
 def process_email(msg, uid_str: str):
     sender_name, sender_addr = email.utils.parseaddr(msg.get("From", ""))
     raw_subj, enc = decode_header(msg.get("Subject", "No Subject"))[0]
@@ -348,7 +347,6 @@ def process_email(msg, uid_str: str):
     ui_print(f"📬 Final Response Block Synthesized Natively:\n{native_reply}")
     send_reply(sender_addr, reply_subj, native_reply)
 
-# ─────────────────────────── Asynchronous Daemon Loop Core ───────────────────────────────
 def background_monitor_thread(running_flag):
     processed_ids = load_processed_ids()
     ui_print(f"🚀 Background Core Thread Hooked. Starting live scanning queue cycles...")
@@ -411,7 +409,6 @@ with col_left:
             with globals()["THREAD_MEMORY_LOCK"]:
                 globals()["SYSTEM_TELEMETRY_LOGS"].append(f"[{time.strftime('%H:%M:%S')}] ⚡ Spawning isolated background server tracking node...")
             
-            # Use a clean lambda flag capture pattern to bypass top-to-bottom script re-runs stably
             t = threading.Thread(target=background_monitor_thread, args=(lambda: st.session_state.is_running,), daemon=True)
             t.start()
             st.rerun()
@@ -428,7 +425,6 @@ with col_left:
     st.text(f"Strong Reasoning Engine: \n{STRONG_MODEL}")
     st.text(f"Polling Frequency Window: {POLL_INTERVAL_SECONDS}s")
     
-    # Custom synchronization check handle to force render updates safely
     st.button("🔄 Sync Telemetry Screen Updates", use_container_width=True)
 
 with col_right:
@@ -439,7 +435,6 @@ with col_right:
             globals()["SYSTEM_TELEMETRY_LOGS"] = ["Buffer memory purged. Standing by..."]
         st.rerun()
 
-    # Read continuous system stream tracking values directly from thread-safe arrays
     with globals()["THREAD_MEMORY_LOCK"]:
         log_content = "\n".join(globals()["SYSTEM_TELEMETRY_LOGS"])
 
