@@ -46,8 +46,8 @@ except Exception:
     st.stop()
 
 NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
-FAST_MODEL     = "meta/llama-3.1-8b-instruct"   # Language + Tone + QA Analytics
-STRONG_MODEL   = "meta/llama-3.3-70b-instruct"  # High-Precision Translation + Drafting
+FAST_MODEL     = "meta/llama-3.1-8b-instruct"   
+STRONG_MODEL   = "meta/llama-3.3-70b-instruct"  
 
 POLL_INTERVAL_SECONDS = 15  
 PROCESSED_IDS_FILE    = "processed_email_ids.txt"
@@ -102,13 +102,7 @@ def local_romanized_detect(text: str) -> str | None:
         if score > 0: scores[lang] = score
     if not scores: return None
     best_lang  = max(scores, key=scores.get)
-    best_score = scores[best_lang]
-    if best_score < 2: return None
-    eng_words   = len(re.findall(r'\b[a-z]{3,}\b', text_lower))
-    native_hits = sum(scores.values())
-    ratio       = native_hits / max(eng_words, 1)
-    if ratio < 0.05: return None  
-    if eng_words > 40 and native_hits < 5: return f"{best_lang}, English"
+    if scores[best_lang] < 2: return None
     return best_lang
 
 def _clean_language_string(raw: str) -> str:
@@ -217,10 +211,11 @@ def parse_email_body(msg) -> tuple[str, list]:
     if msg.is_multipart():
         for part in msg.walk():
             ct = part.get_content_type()
-            elif ct == "text/html" and not html_body and raw:
+            raw = part.get_payload(decode=True)
             if ct.startswith("image/") and raw: images.append(raw)
             elif ct == "text/plain" and not body and raw: body = raw.decode(errors="ignore")
-            elif ct == "text/html" and not html_body biases and raw: html_body = raw.decode(errors="ignore")
+            # FIX: Removed the rogue 'biases' syntax token below
+            elif ct == "text/html" and not html_body and raw: html_body = raw.decode(errors="ignore")
     else:
         ct, raw = msg.get_content_type(), msg.get_payload(decode=True)
         if raw:
@@ -249,7 +244,7 @@ def save_processed_id(uid: str):
     with open(PROCESSED_IDS_FILE, "a") as f: f.write(uid + "\n")
 
 # =====================================================================
-# FULL COLAB REPLICATED LIFECYCLE MANAGEMENT ENGINE
+# SYSTEM LIFE-CYCLE ORCHESTRATION PIPELINE
 # =====================================================================
 def process_email(msg, uid_str: str):
     sender_name, sender_addr = email.utils.parseaddr(msg.get("From", ""))
@@ -276,28 +271,24 @@ def process_email(msg, uid_str: str):
     ui_print(full_text)
     ui_print(f"==========================================\n")
 
-    # Step 1 & 3: Fast Model Language & Tone Classification
     ui_print("Processing deep text scanning via NVIDIA Llama 3.1 8B...")
     t0 = time.time()
     language, tone = detect_language_and_tone(full_text)
     ui_print(f"   👉 Detected Language: **{language}**")
     ui_print(f"   👉 Evaluated Email Tone: **{tone}** ({time.time()-t0:.2f}s)\n")
 
-    # Step 2: Context Translation Mapping
     ui_print("Generating English Translation...")
     t0 = time.time()
     english_text = translate_to_english(full_text, language)
     if not english_text: return
     ui_print(f"   👉 English Translation:\n   \"{english_text}\" ({time.time()-t0:.2f}s)\n-----------------------")
 
-    # Step 4: Persona Core Response Generation
     ui_print("🤖 AI Drafting Persona-Based Support Reply (in English)...")
     t0 = time.time()
     english_reply = draft_english_reply(english_text, tone)
     if not english_reply: return
     ui_print(f"   👉 Generated English Draft:\n   {english_reply} ({time.time()-t0:.2f}s)\n-----------------------")
 
-    # Step 5 & QA Audit Loop Execution
     ui_print(f"🔄 Translating response framework → {language} & initializing QA audit matrices...")
     t0 = time.time()
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -357,7 +348,7 @@ with col_right:
         disabled=True
     )
 
-# ═══════════════════════════ RUNTIME COMPONENT ASSIGNMENT ════════════════════════════════════
+# ═══════════════════════════ MAIN RUNTIME POLLING LOOP ════════════════════════════════════
 if st.session_state.is_running:
     processed_ids = load_processed_ids()
     mail = None
