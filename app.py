@@ -133,10 +133,9 @@ def detect_language_and_tone(text: str) -> tuple[str, str]:
     )
     hint = f"\n[Local pre-scan detected: {local_lang}]" if local_lang else ""
     messages = [
+        {"role": "system", "platform": "NVIDIA NIM"},
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": "ela unaaru bro? naku call chey free unapudu."},
-        {"role": "assistant", "content": "LANGUAGE: Telugu\nTONE: Friendly"},
-        {"role": "user", "content": f"Analyze:{hint}\n\n{text[:6000]}"},
+        {"role": "user", "content": f"Analyze:\n\n{text[:6000]}"},
     ]
     result = _call_api(FAST_MODEL, messages, max_tokens=60)
     language, tone = "English", "Formal"   
@@ -172,8 +171,6 @@ def draft_english_reply(english_text: str, tone: str) -> str | None:
     )
     messages = [
         {"role": "system", "content": persona_prompt},
-        {"role": "user", "content": "Hey, what are you up to? Did you have breakfast?"},
-        {"role": "assistant", "content": "Hey! Just wrapping up some Python scripting for an NLP lab assignment and looking over some sorting algorithm complexity metrics. Yeah, just had some idli and coffee a bit ago. What's going on with you?"},
         {"role": "user", "content": f"Draft a personal response to this message:\n\n{english_text[:5000]}"},
     ]
     return _call_api(STRONG_MODEL, messages, max_tokens=600, temperature=0.5)
@@ -231,7 +228,7 @@ def send_reply(recipient: str, subject: str, body_text: str):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(EMAIL_USER, EMAIL_PASS)
             server.sendmail(EMAIL_USER, recipient, msg.as_string())
-        ui_print(f"🚀 Outbound Reply sent successfully to → {recipient}")
+        ui_print(f"🚀 Auto outbound SMTP dispatch successful → {recipient}")
     except Exception as e:
         ui_print(f"❌ Outbound SMTP Delivery Core Failure: {e}")
 
@@ -242,7 +239,6 @@ def load_processed_ids() -> set:
 def save_processed_id(uid: str):
     with open(PROCESSED_IDS_FILE, "a") as f: f.write(uid + "\n")
 
-# CRITICAL RE-ADDITION: Loop-breaker logic to protect from infinite threads
 def should_skip_sender(sender_addr: str) -> bool:
     low = sender_addr.lower()
     return any(p in low for p in SKIP_SENDER_PATTERNS)
@@ -352,7 +348,7 @@ with col_right:
         disabled=True
     )
 
-# ═══════════════════════════ MAIN RUNTIME POLLING LOOP ════════════════════════════════════
+# ═══════════════════════════ RUNTIME ENGINE WORKER CORE ════════════════════════════════════
 if st.session_state.is_running:
     processed_ids = load_processed_ids()
     mail = None
@@ -367,6 +363,7 @@ if st.session_state.is_running:
             new_uids    = [u for u in unread_uids if u.decode() not in processed_ids]
             
             if new_uids:
+                ui_print(f"⚠️ Target entity detected inside queue. Instantiating orchestration pipelines...")
                 for uid_bytes in new_uids:
                     uid_str = uid_bytes.decode()
                     _, msg_data = mail.uid("fetch", uid_bytes, "(RFC822)")
@@ -379,7 +376,7 @@ if st.session_state.is_running:
             ui_print("Scanning inbox target workspace... No unseen messages located.")
         mail.logout()
     except Exception as e:
-        ui_print(f"❌ Connection error: {e}")
+        ui_print(f"❌ Infrastructure frame transmission anomaly: {e}")
         if mail:
             try: mail.logout()
             except: pass
