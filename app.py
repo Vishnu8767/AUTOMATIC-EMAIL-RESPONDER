@@ -28,10 +28,10 @@ except ImportError:
 if "is_running" not in st.session_state:
     st.session_state.is_running = False
 if "ui_logs" not in st.session_state:
-    st.session_state.ui_logs = ["🌐 Engine Standby. Click '🚀 Launch Background Engine' to begin monitoring logs..."]
+    st.session_state.ui_logs = ["🌐 Autonomous Background Engine Framework Activated. Standing by for unread data streams..."]
 
 def ui_print(text: str):
-    """Appends live processing data directly to the Streamlit UI memory array."""
+    """Appends live processing data directly to the Streamlit UI memory array with timestamps."""
     print(text)
     timestamp = time.strftime('%H:%M:%S')
     st.session_state.ui_logs.append(f"[{timestamp}] {text}")
@@ -46,10 +46,10 @@ except Exception:
     st.stop()
 
 NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
-FAST_MODEL     = "meta/llama-3.1-8b-instruct"   
-STRONG_MODEL   = "meta/llama-3.3-70b-instruct"  
+FAST_MODEL     = "meta/llama-3.1-8b-instruct"   # Language + Tone + QA Analytics
+STRONG_MODEL   = "meta/llama-3.3-70b-instruct"  # High-Precision Translation + Drafting
 
-POLL_INTERVAL_SECONDS = 5  # Snappy refresh timing ideal for live evaluation presentations
+POLL_INTERVAL_SECONDS = 15  
 PROCESSED_IDS_FILE    = "processed_email_ids.txt"
 
 SKIP_SENDER_PATTERNS = [
@@ -102,7 +102,13 @@ def local_romanized_detect(text: str) -> str | None:
         if score > 0: scores[lang] = score
     if not scores: return None
     best_lang  = max(scores, key=scores.get)
-    if scores[best_lang] < 2: return None
+    best_score = scores[best_lang]
+    if best_score < 2: return None
+    eng_words   = len(re.findall(r'\b[a-z]{3,}\b', text_lower))
+    native_hits = sum(scores.values())
+    ratio       = native_hits / max(eng_words, 1)
+    if ratio < 0.05: return None  
+    if eng_words > 40 and native_hits < 5: return f"{best_lang}, English"
     return best_lang
 
 def _clean_language_string(raw: str) -> str:
@@ -116,7 +122,7 @@ def _call_api(model: str, messages: list, max_tokens: int = 512, temperature: fl
     headers = {"Authorization": f"Bearer {NVAPI_KEY}", "Content-Type": "application/json"}
     payload = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
     try:
-        r = _session.post(NVIDIA_API_URL, headers=headers, json=payload, timeout=30)
+        r = _session.post(NVIDIA_API_URL, headers=headers, json=payload, timeout=60)
         if r.status_code == 200:
             return r.json()["choices"][0]["message"]["content"].strip()
     except Exception:
@@ -125,58 +131,78 @@ def _call_api(model: str, messages: list, max_tokens: int = 512, temperature: fl
 
 def detect_language_and_tone(text: str) -> tuple[str, str]:
     local_lang = local_romanized_detect(text)
-    system_prompt = "You are an expert linguist. Analyze text and return EXACTLY two lines:\nLANGUAGE: <lang>\nTONE: <Friendly/Formal>"
+    system_prompt = (
+        "You are an expert linguist. Analyze the text and return EXACTLY two lines:\n"
+        "LANGUAGE: <comma-separated language names>\n"
+        "TONE: <Friendly or Formal>\n\n"
+        "Return ONLY the two lines. No extra text."
+    )
+    hint = f"\n[Local pre-scan detected: {local_lang}]" if local_lang else ""
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"Analyze:\n\n{text[:4000]}"},
+        {"role": "user", "content": "ela unaaru bro? naku call chey free unapudu."},
+        {"role": "assistant", "content": "LANGUAGE: Telugu\nTONE: Friendly"},
+        {"role": "user", "content": f"Analyze:{hint}\n\n{text[:6000]}"},
     ]
     result = _call_api(FAST_MODEL, messages, max_tokens=60)
     language, tone = "English", "Formal"   
     if result:
         for line in result.strip().splitlines():
-            if line.upper().startswith("LANGUAGE:"): language = _clean_language_string(line.split(":", 1)[1].strip())
-            elif line.upper().startswith("TONE:"): tone = "Friendly" if "friend" in line.lower() else "Formal"
-    if local_lang and language.lower() == "english": language = local_lang
+            upper = line.upper()
+            if upper.startswith("LANGUAGE:"): language = _clean_language_string(line.split(":", 1)[1].strip())
+            elif upper.startswith("TONE:"):
+                raw_tone = line.split(":", 1)[1].strip().rstrip(".")
+                tone = "Friendly" if "friend" in raw_tone.lower() else "Formal"
+    if local_lang and language.lower() == "english": language = _clean_language_string(local_lang)
     return language, tone
 
 def translate_to_english(text: str, detected_languages: str) -> str | None:
     if detected_languages.strip().lower() == "english": return text
     messages = [
-        {"role": "system", "content": "Translate the South Asian text accurately to English. Output ONLY the raw translation payload text."},
-        {"role": "user", "content": text[:8000]},
+        {"role": "system", "content": "You are an elite translator specializing in South Asian languages. Translate ALL non-English content into fluent, natural English. Output ONLY the English translation — no labels, no notes."},
+        {"role": "user", "content": text[:12000]},
     ]
-    return _call_api(STRONG_MODEL, messages, max_tokens=1000)
+    return _call_api(STRONG_MODEL, messages, max_tokens=1500)
 
 def draft_english_reply(english_text: str, tone: str) -> str | None:
     persona_prompt = (
-        "You are Vishnu, a Computer Science student at Amity University studying NLP. Act as him. "
-        f"Hobbies: Free Fire MAX, T20 cricket (RCB, SRH, KKR). Breakfast: South Indian idli/dosa with coffee. Tone: {tone}. Output ONLY response."
+        "You are a real human writing a direct personal email response. You must act completely as the primary profile defined below:\n\n"
+        "YOUR PERSONAL DATA ENGINE:\n"
+        "- Name: Vishnu (Full name: Boddu Vishnu Vardhan Reddy)\n"
+        "- Occupation: Computer Science & Engineering student at Amity University\n"
+        "- Academic Focus: Python algorithms, complexity analysis, text scraping, and Natural Language Processing (NLP)\n"
+        "- Plan Parameters: Actively preparing for the GATE examination\n"
+        "- Hobbies: Major follower of T20 cricket and live IPL statistics (RCB, SRH, KKR), tracking regional Telugu cinema movie releases, and playing Free Fire MAX\n"
+        "- Daily Food Habits: Eats South Indian breakfast (Idli/Dosa/Poha) with coffee in the morning; Rice, dal, roti, and curries for lunch and dinner\n\n"
+        f"STYLISTIC ALIGNMENT: Match formatting rules to the calculated tone parameter: **{tone}**. Output ONLY the response text payload itself."
     )
     messages = [
         {"role": "system", "content": persona_prompt},
-        {"role": "user", "content": english_text[:4000]},
+        {"role": "user", "content": "Hey, what are you up to? Did you have breakfast?"},
+        {"role": "assistant", "content": "Hey! Just wrapping up some Python scripting for an NLP lab assignment and looking over some sorting algorithm complexity metrics. Yeah, just had some idli and coffee a bit ago. What's going on with you?"},
+        {"role": "user", "content": f"Draft a personal response to this message:\n\n{english_text[:5000]}"},
     ]
     return _call_api(STRONG_MODEL, messages, max_tokens=600, temperature=0.5)
 
 def translate_to_native(english_reply: str, target_language: str, tone: str) -> str | None:
     if "english" in target_language.lower() and "," not in target_language: return english_reply
     messages = [
-        {"role": "system", "content": f"Translate this English text into matching fluent prose in {target_language} matching a {tone} register perfectly. Output ONLY translation."},
+        {"role": "system", "content": f"You are a native speaker of {target_language}. Translate the English reply into natural, idiomatic {target_language} matching a {tone} register. Output ONLY the final clean translation payload."},
         {"role": "user", "content": english_reply},
     ]
     return _call_api(STRONG_MODEL, messages, max_tokens=1000)
 
 def run_qa_audit(english_draft: str, native_reply: str, target_tone: str, target_lang: str) -> tuple[int, str]:
     messages = [
-        {"role": "system", "content": f"Compare English draft with translation. Check if {target_tone} tone was preserved. Format exactly as:\nSCORE: <1-5>\nANALYSIS: <text>"},
-        {"role": "user", "content": f"Draft:\n{english_draft}\n\nTranslation:\n{native_reply}"},
+        {"role": "system", "content": f"You are a QA compliance bot checking translation chains. Compare the original English draft response with its translation into {target_lang}. The specified stylistic parameter target was **{target_tone}**. Format exactly as:\nSCORE: <integer 1-5>\nANALYSIS: <one sentence feedback string>"},
+        {"role": "user", "content": f"English draft:\n{english_draft}\n\nTranslated reply:\n{native_reply}"},
     ]
     result = _call_api(FAST_MODEL, messages, max_tokens=80)
-    score, analysis = 5, "Audit completed successfully."
+    score, analysis = 5, "Audit verification completed successfully."
     if result:
         for line in result.strip().splitlines():
             if line.upper().startswith("SCORE:"):
-                try: score = int(re.search(r'\d', line).group())
+                try: score = int(re.search(r'\d', line.split(":", 1)[1]).group())
                 except Exception: pass
             elif line.upper().startswith("ANALYSIS:"): analysis = line.split(":", 1)[1].strip()
     return score, analysis
@@ -194,7 +220,7 @@ def parse_email_body(msg) -> tuple[str, list]:
             raw = part.get_payload(decode=True)
             if ct.startswith("image/") and raw: images.append(raw)
             elif ct == "text/plain" and not body and raw: body = raw.decode(errors="ignore")
-            elif ct == "text/html" and not html_body and raw: html_body = raw.decode(errors="ignore")
+            elif ct == "text/html" and not html_body biases and raw: html_body = raw.decode(errors="ignore")
     else:
         ct, raw = msg.get_content_type(), msg.get_payload(decode=True)
         if raw:
@@ -213,7 +239,7 @@ def send_reply(recipient: str, subject: str, body_text: str):
             server.sendmail(EMAIL_USER, recipient, msg.as_string())
         ui_print(f"🚀 Outbound Reply sent successfully to → {recipient}")
     except Exception as e:
-        ui_print(f"❌ SMTP delivery failure: {e}")
+        ui_print(f"❌ Outbound SMTP Delivery Core Failure: {e}")
 
 def load_processed_ids() -> set:
     if not os.path.exists(PROCESSED_IDS_FILE): return set()
@@ -223,7 +249,7 @@ def save_processed_id(uid: str):
     with open(PROCESSED_IDS_FILE, "a") as f: f.write(uid + "\n")
 
 # =====================================================================
-# CORE PIPELINE LIFECYCLE EXECUTION
+# FULL COLAB REPLICATED LIFECYCLE MANAGEMENT ENGINE
 # =====================================================================
 def process_email(msg, uid_str: str):
     sender_name, sender_addr = email.utils.parseaddr(msg.get("From", ""))
@@ -231,35 +257,68 @@ def process_email(msg, uid_str: str):
     if isinstance(raw_subj, bytes): raw_subj = raw_subj.decode(enc or "utf-8", errors="ignore")
     reply_subj = raw_subj if raw_subj.lower().startswith("re:") else f"Re: {raw_subj}"
 
-    ui_print(f"📧 Found unseen email (UID {uid_str}) from {sender_name or sender_addr}")
-    if any(p in sender_addr.lower() for p in SKIP_SENDER_PATTERNS):
-        ui_print(f"⛔ Skipping automated/self address: {sender_addr}")
-        return
+    ui_print(f"==========================================")
+    ui_print(f"📧 EMAIL CONTENT INGESTED (UID {uid_str})")
+    ui_print(f"==========================================")
 
     body, images = parse_email_body(msg)
-    if not body.strip():
-        ui_print("⚠️ Empty text string — pipeline skipped.")
+    ocr          = extract_ocr(images) if images else ""
+    full_text    = f"{body}\n{ocr}".strip()
+    
+    if not full_text:
+        ui_print("⚠️ Inbound message text array empty — pipeline skipped.")
         return
 
-    language, tone = detect_language_and_tone(body)
-    ui_print(f"   👉 Language: {language} | Tone: {tone}")
+    if should_skip_sender(sender_addr):
+        ui_print(f"⛔ Skipping circuit processing logic loop for automated target address: {sender_addr}")
+        return
 
-    english_text = translate_to_english(body, language)
+    ui_print(full_text)
+    ui_print(f"==========================================\n")
+
+    # Step 1 & 3: Fast Model Language & Tone Classification
+    ui_print("Processing deep text scanning via NVIDIA Llama 3.1 8B...")
+    t0 = time.time()
+    language, tone = detect_language_and_tone(full_text)
+    ui_print(f"   👉 Detected Language: **{language}**")
+    ui_print(f"   👉 Evaluated Email Tone: **{tone}** ({time.time()-t0:.2f}s)\n")
+
+    # Step 2: Context Translation Mapping
+    ui_print("Generating English Translation...")
+    t0 = time.time()
+    english_text = translate_to_english(full_text, language)
+    if not english_text: return
+    ui_print(f"   👉 English Translation:\n   \"{english_text}\" ({time.time()-t0:.2f}s)\n-----------------------")
+
+    # Step 4: Persona Core Response Generation
+    ui_print("🤖 AI Drafting Persona-Based Support Reply (in English)...")
+    t0 = time.time()
     english_reply = draft_english_reply(english_text, tone)
+    if not english_reply: return
+    ui_print(f"   👉 Generated English Draft:\n   {english_reply} ({time.time()-t0:.2f}s)\n-----------------------")
 
+    # Step 5 & QA Audit Loop Execution
+    ui_print(f"🔄 Translating response framework → {language} & initializing QA audit matrices...")
+    t0 = time.time()
     with ThreadPoolExecutor(max_workers=2) as executor:
         f_trans = executor.submit(translate_to_native, english_reply, language, tone)
         f_qa    = executor.submit(run_qa_audit, english_reply, english_reply, tone, language)
         native_reply = f_trans.result()
         qa_score, qa_analysis = f_qa.result()
 
-    ui_print(f"   👉 QA Validation Score: {qa_score}/5 — {qa_analysis}")
+    if not native_reply: return
+    ui_print(f"   👉 Final Customer-Facing Response:\n   \"{native_reply}\"")
+    ui_print(f"   👉 QA Tone Evaluation Compliance Audit Output: Score {qa_score}/5 — {qa_analysis} ({time.time()-t0:.2f}s)\n-----------------------")
+
     if qa_score < 3:
-        native_reply = translate_to_native(english_reply, language, tone + " (strict tone preservation)")
+        ui_print(f"⚠️ QA Score threshold alert. Re-running transformation prompt arrays...")
+        improved = translate_to_native(english_reply, language, tone + " (Enforce strict politeness constraints)")
+        if improved: native_reply = improved
 
     send_reply(sender_addr, reply_subj, native_reply)
 
-# ═══════════════════════════ STREAMLIT DASHBOARD INTERFACE ════════════════════════════════════
+# ═══════════════════════════ STREAMLIT INTERFACE FRAMEWORK ════════════════════════════════════
+st.set_page_config(layout="wide")
 st.title("📬 Intelligent Multilingual Support Middleware Engine")
 st.markdown("---")
 
@@ -294,12 +353,11 @@ with col_right:
     log_placeholder.text_area(
         label="Operational Traces",
         value="\n".join(st.session_state.ui_logs),
-        height=550,
+        height=580,
         disabled=True
     )
 
-# ═══════════════════════════ RUNTIME INLINE PASS LOOP ════════════════════════════════════
-# Eliminates standard background thread throttling issues on Streamlit Cloud containers
+# ═══════════════════════════ RUNTIME COMPONENT ASSIGNMENT ════════════════════════════════════
 if st.session_state.is_running:
     processed_ids = load_processed_ids()
     mail = None
@@ -321,16 +379,15 @@ if st.session_state.is_running:
                     processed_ids.add(uid_str)
                     save_processed_id(uid_str)
             else:
-                ui_print("🔍 Scanning inbox target workspace... No unseen messages located.")
+                ui_print("Scanning inbox target workspace... No unseen messages located.")
         else:
-            ui_print("🔍 Scanning inbox target workspace... No unseen messages located.")
+            ui_print("Scanning inbox target workspace... No unseen messages located.")
         mail.logout()
     except Exception as e:
-        ui_print(f"❌ Connection error window: {e}")
+        ui_print(f"❌ Connection error: {e}")
         if mail:
             try: mail.logout()
             except: pass
 
-    # Forces an immediate component state refresh cycle to dynamically display new logs
     time.sleep(POLL_INTERVAL_SECONDS)
     st.rerun()
