@@ -214,7 +214,6 @@ def parse_email_body(msg) -> tuple[str, list]:
             raw = part.get_payload(decode=True)
             if ct.startswith("image/") and raw: images.append(raw)
             elif ct == "text/plain" and not body and raw: body = raw.decode(errors="ignore")
-            # FIX: Removed the rogue 'biases' syntax token below
             elif ct == "text/html" and not html_body and raw: html_body = raw.decode(errors="ignore")
     else:
         ct, raw = msg.get_content_type(), msg.get_payload(decode=True)
@@ -243,8 +242,13 @@ def load_processed_ids() -> set:
 def save_processed_id(uid: str):
     with open(PROCESSED_IDS_FILE, "a") as f: f.write(uid + "\n")
 
+# CRITICAL RE-ADDITION: Loop-breaker logic to protect from infinite threads
+def should_skip_sender(sender_addr: str) -> bool:
+    low = sender_addr.lower()
+    return any(p in low for p in SKIP_SENDER_PATTERNS)
+
 # =====================================================================
-# SYSTEM LIFE-CYCLE ORCHESTRATION PIPELINE
+# FULL COLAB REPLICATED LIFECYCLE MANAGEMENT ENGINE
 # =====================================================================
 def process_email(msg, uid_str: str):
     sender_name, sender_addr = email.utils.parseaddr(msg.get("From", ""))
