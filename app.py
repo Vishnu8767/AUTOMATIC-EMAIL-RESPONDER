@@ -217,7 +217,7 @@ def parse_email_body(msg) -> tuple[str, list]:
     if msg.is_multipart():
         for part in msg.walk():
             ct = part.get_content_type()
-            raw = part.get_payload(decode=True)
+            elif ct == "text/html" and not html_body and raw:
             if ct.startswith("image/") and raw: images.append(raw)
             elif ct == "text/plain" and not body and raw: body = raw.decode(errors="ignore")
             elif ct == "text/html" and not html_body biases and raw: html_body = raw.decode(errors="ignore")
